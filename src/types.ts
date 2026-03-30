@@ -19,6 +19,8 @@ export interface Decision {
   cost: number;
   risk: 'Low' | 'Medium' | 'High';
   impact: number;
+  proactiveAdjustment?: string;
+  isProactive?: boolean;
 }
 
 export interface Slide {

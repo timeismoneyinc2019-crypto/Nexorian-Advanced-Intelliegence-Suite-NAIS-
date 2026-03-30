@@ -1,6 +1,6 @@
 {
-  "name": "Nexus: Decision Infrastructure",
-  "description": "A predictive coordination platform that turns fragmented, reactive systems into coordinated, predictive ones.",
+  "name": "Nexorian Advanced Intelligence Suite (NAIS)",
+  "description": "A cross-platform, predictive intelligence suite for enterprise coordination and deterministic decision-making.",
   "requestFramePermissions": [
     "microphone"
   ]

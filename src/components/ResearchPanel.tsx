@@ -8,31 +8,121 @@ import {
   CheckCircle2, 
   ArrowRight,
   Sparkles,
-  Globe
+  Globe,
+  Key,
+  AlertCircle,
+  ChevronDown,
+  FileText
 } from 'lucide-react';
 import { GlassCard } from './GlassCard';
 import { performDeepResearch } from '../services/gemini';
 import { ResearchResult } from '../types';
 import { cn } from '@/src/lib/utils';
+import { auth, db } from '../firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { useEffect } from 'react';
+
+const RESEARCH_TEMPLATES = [
+  {
+    id: 'competitor',
+    name: 'Competitor Analysis',
+    query: 'Perform a deep technical and market analysis of the top 3 competitors in the [Insert Industry] space. Focus on their infrastructure stack, pricing models, and recent strategic pivots.'
+  },
+  {
+    id: 'market',
+    name: 'Market Trends',
+    query: 'Analyze the emerging macro-trends in [Insert Sector] for the next 18-24 months. Identify key growth drivers, regulatory headwinds, and disruptive technologies.'
+  },
+  {
+    id: 'feasibility',
+    name: 'Technology Feasibility',
+    query: 'Evaluate the technical feasibility of implementing [Insert Technology] within a [Insert Context] environment. Analyze potential bottlenecks, cost-to-scale, and integration risks.'
+  },
+  {
+    id: 'swot',
+    name: 'SWOT Infrastructure',
+    query: 'Conduct a comprehensive SWOT analysis of [Insert Company/Project] with a specific focus on their decision-making infrastructure and data resilience.'
+  }
+];
 
 export const ResearchPanel: React.FC = () => {
   const [query, setQuery] = useState('');
+  const [apiKey, setApiKey] = useState(localStorage.getItem('nexus_gemini_key') || '');
+  const [showKeyInput, setShowKeyInput] = useState(!process.env.GEMINI_API_KEY && !localStorage.getItem('nexus_gemini_key'));
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ResearchResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showTemplates, setShowTemplates] = useState(false);
+
+  useEffect(() => {
+    const fetchKey = async () => {
+      const user = auth.currentUser;
+      if (user) {
+        const settingsDoc = await getDoc(doc(db, 'userSettings', user.uid));
+        if (settingsDoc.exists()) {
+          const key = settingsDoc.data().geminiApiKey || '';
+          if (key) {
+            setApiKey(key);
+            setShowKeyInput(false);
+          }
+        }
+      }
+    };
+    fetchKey();
+  }, []);
+
+  const handleSelectTemplate = (templateQuery: string) => {
+    setQuery(templateQuery);
+    setShowTemplates(false);
+  };
+
+  const handleSaveKey = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (apiKey.trim()) {
+      localStorage.setItem('nexus_gemini_key', apiKey.trim());
+      
+      const user = auth.currentUser;
+      if (user) {
+        try {
+          await setDoc(doc(db, 'userSettings', user.uid), {
+            geminiApiKey: apiKey.trim(),
+            updatedAt: new Date().toISOString(),
+            uid: user.uid
+          }, { merge: true });
+        } catch (err) {
+          console.error("Failed to save key to Firestore:", err);
+        }
+      }
+      
+      setShowKeyInput(false);
+    }
+  };
 
   const handleResearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!query.trim()) return;
 
+    const keyToUse = apiKey.trim() || process.env.GEMINI_API_KEY;
+    if (!keyToUse) {
+      setShowKeyInput(true);
+      return;
+    }
+
     setLoading(true);
     setError(null);
     try {
-      const researchResult = await performDeepResearch(query);
+      const researchResult = await performDeepResearch(query, apiKey.trim());
       setResult(researchResult);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      setError("Deep Research Engine encountered an anomaly. Please re-initialize.");
+      if (err.message === "AI_NOT_INITIALIZED") {
+        setError("API Key missing or invalid. Please check your settings.");
+        setShowKeyInput(true);
+      } else if (err.message.includes("LICENSE")) {
+        setError("Enterprise License Required. Please activate in Settings.");
+      } else {
+        setError("Deep Research Engine encountered an anomaly. Please re-initialize.");
+      }
     } finally {
       setLoading(false);
     }
@@ -55,16 +145,100 @@ export const ResearchPanel: React.FC = () => {
           </h1>
         </div>
         <div className="flex flex-col items-start md:items-end gap-2">
-          <p className="text-[10px] font-mono text-white/40 uppercase tracking-[0.2em]">Gemini 3.1 Pro // High-Reasoning</p>
+          <div className="flex items-center gap-4">
+            <button 
+              onClick={() => setShowKeyInput(!showKeyInput)}
+              className={cn(
+                "p-2 rounded-xl border transition-all",
+                apiKey || process.env.GEMINI_API_KEY ? "border-green-500/20 text-green-400 bg-green-500/5" : "border-red-500/20 text-red-400 bg-red-500/5"
+              )}
+            >
+              <Key className="w-4 h-4" />
+            </button>
+            <p className="text-[10px] font-mono text-white/40 uppercase tracking-[0.2em]">Gemini 3.1 Pro // High-Reasoning</p>
+          </div>
           <div className="h-px w-32 bg-gradient-to-r from-transparent to-white/20" />
         </div>
       </div>
+
+      <AnimatePresence>
+        {showKeyInput && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden"
+          >
+            <GlassCard className="p-8 border-blue-500/30 bg-blue-500/5">
+              <div className="flex flex-col md:flex-row items-center gap-6">
+                <div className="flex-1 space-y-2">
+                  <h3 className="text-xs font-black text-white uppercase tracking-widest flex items-center gap-2">
+                    <Key className="w-3 h-3 text-blue-400" />
+                    Configure Intelligence Access
+                  </h3>
+                  <p className="text-[11px] text-white/40 leading-relaxed">
+                    Enter your Gemini API key to enable Deep Research. Your key is stored locally and never leaves your browser. 
+                    <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline ml-1">Get a free key here.</a>
+                  </p>
+                </div>
+                <form onSubmit={handleSaveKey} className="flex gap-2 w-full md:w-auto">
+                  <input
+                    type="password"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    placeholder="Enter Gemini API Key..."
+                    className="flex-1 md:w-64 bg-black/40 border border-white/10 rounded-xl px-4 py-2 text-xs text-white focus:outline-none focus:border-blue-500/50 transition-all"
+                  />
+                  <button
+                    type="submit"
+                    className="px-6 py-2 bg-white text-black text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-white/90 transition-all"
+                  >
+                    Authorize
+                  </button>
+                </form>
+              </div>
+            </GlassCard>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         {/* Input Section */}
         <div className="lg:col-span-4 space-y-6">
           <GlassCard className="p-8">
-            <h3 className="text-xs font-black text-white/40 uppercase tracking-widest mb-6">Initialize Query</h3>
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xs font-black text-white/40 uppercase tracking-widest">Initialize Query</h3>
+              <div className="relative">
+                <button
+                  onClick={() => setShowTemplates(!showTemplates)}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-[9px] font-black text-white/60 hover:text-white hover:bg-white/10 transition-all uppercase tracking-widest"
+                >
+                  <FileText className="w-3 h-3" />
+                  Templates
+                  <ChevronDown className={cn("w-3 h-3 transition-transform", showTemplates && "rotate-180")} />
+                </button>
+                <AnimatePresence>
+                  {showTemplates && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                      className="absolute right-0 top-full mt-2 w-64 z-50 p-2 rounded-2xl bg-[#0a0a0a] border border-white/10 shadow-2xl backdrop-blur-3xl"
+                    >
+                      {RESEARCH_TEMPLATES.map((t) => (
+                        <button
+                          key={t.id}
+                          onClick={() => handleSelectTemplate(t.query)}
+                          className="w-full text-left p-3 rounded-xl hover:bg-white/5 text-[10px] font-bold text-white/60 hover:text-white transition-all uppercase tracking-wider"
+                        >
+                          {t.name}
+                        </button>
+                      ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            </div>
             <form onSubmit={handleResearch} className="space-y-4">
               <div className="relative">
                 <textarea
@@ -77,6 +251,14 @@ export const ResearchPanel: React.FC = () => {
                   {query.length} / 500
                 </div>
               </div>
+              
+              {error && (
+                <div className="flex items-center gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-[10px] font-medium">
+                  <AlertCircle className="w-3 h-3" />
+                  {error}
+                </div>
+              )}
+
               <button
                 type="submit"
                 disabled={loading || !query.trim()}
