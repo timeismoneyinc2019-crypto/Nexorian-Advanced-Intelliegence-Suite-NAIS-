@@ -1,0 +1,74 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    // Collection: systems/{industry}/states
+    // Fields: timestamp (number), value (number), drift (number), uncertainty (number), raw_data (map)
+    //
+    // Collection: systems/{industry}/predictions
+    // Fields: timestamp (number), prediction (string), action (string), probability (number), outcome (string), reward (number)
+    //
+    // Collection: systems/{industry}/weights
+    // Fields: accuracy (number), efficiency (number), risk (number), updatedAt (number)
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "timeismoneyinc2019@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isValidState(data) {
+      return data.timestamp is number &&
+             data.value is number &&
+             data.drift is number &&
+             data.uncertainty is number;
+    }
+
+    function isValidPrediction(data) {
+      return data.timestamp is number &&
+             data.prediction is string && data.prediction.size() < 2000 &&
+             data.action is string && data.action.size() < 2000 &&
+             data.probability is number;
+    }
+
+    function isValidWeights(data) {
+      return data.accuracy is number &&
+             data.efficiency is number &&
+             data.risk is number;
+    }
+
+    // Rules
+    match /systems/{industry} {
+      match /states/{stateId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() && isValidState(request.resource.data);
+      }
+      match /predictions/{predictionId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated() && isValidPrediction(request.resource.data);
+        allow update: if isAuthenticated() && isValidPrediction(request.resource.data);
+      }
+      match /weights/{weightId} {
+        allow read: if isAuthenticated();
+        allow write: if isAuthenticated() && isValidWeights(request.resource.data);
+      }
+    }
+
+    match /users/{userId} {
+      allow read: if isAuthenticated() && request.auth.uid == userId;
+      allow write: if isAuthenticated() && request.auth.uid == userId;
+    }
+
+    match /test/connection {
+      allow read: if true;
+    }
+  }
+}

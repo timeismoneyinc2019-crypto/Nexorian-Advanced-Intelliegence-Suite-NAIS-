@@ -1,0 +1,7 @@
+{
+  "name": "Nexus: Decision Infrastructure",
+  "description": "A predictive coordination platform that turns fragmented, reactive systems into coordinated, predictive ones.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
